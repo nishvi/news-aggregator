@@ -29,7 +29,7 @@ async function scrapeNews(source) {
         const articles = [];
         
         $(source.selector).each((index, element) => {
-            if (index < 10) { // Limit to 10 articles per source
+            if (index < 4) { // Limit to 10 articles per source
                 const title = $(element).text().trim();
                 const linkEl = $(element).find('a').length ? $(element).find('a') : $(element).closest('a');
                 const link = linkEl.attr('href');
