@@ -1,1 +1,100 @@
+// api/news.js - Vercel Serverless Function
+import axios from 'axios';
+import * as cheerio from 'cheerio';
+
+// Configure your news sources
+const NEWS_SOURCES = [
+    {
+        name: 'Example News 1',
+        url: 'https://example1.com',
+        selector: '.headline'
+    },
+    {
+        name: 'Example News 2', 
+        url: 'https://example2.com',
+        selector: '.article-title'
+    }
+];
+
+async function scrapeNews(source) {
+    try {
+        const response = await axios.get(source.url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            },
+            timeout: 10000 // 10 second timeout for Vercel
+        });
+        
+        const $ = cheerio.load(response.data);
+        const articles = [];
+        
+        $(source.selector).each((index, element) => {
+            if (index < 10) { // Limit to 10 articles per source
+                const title = $(element).text().trim();
+                const linkEl = $(element).find('a').length ? $(element).find('a') : $(element).closest('a');
+                const link = linkEl.attr('href');
+                
+                if (title) {
+                    articles.push({
+                        title,
+                        link: link ? (link.startsWith('http') ? link : source.url + link) : '',
+                        source: source.name,
+                        timestamp: new Date().toISOString()
+                    });
+                }
+            }
+        });
+        
+        return articles;
+    } catch (error) {
+        console.error(`Error scraping ${source.name}:`, error.message);
+        return [];
+    }
+}
+
+export default async function handler(req, res) {
+    // Enable CORS
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    
+    if (req.method === 'OPTIONS') {
+        res.status(200).end();
+        return;
+    }
+    
+    if (req.method !== 'GET') {
+        res.status(405).json({ error: 'Method not allowed' });
+        return;
+    }
+    
+    try {
+        const allNews = [];
+        
+        // Process sources in parallel but with timeout
+        const promises = NEWS_SOURCES.map(source => 
+            Promise.race([
+                scrapeNews(source),
+                new Promise(resolve => setTimeout(() => resolve([]), 8000)) // 8s timeout
+            ])
+        );
+        
+        const results = await Promise.all(promises);
+        results.forEach(news => allNews.push(...news));
+        
+        res.status(200).json({
+            success: true,
+            data: allNews,
+            lastUpdated: new Date().toISOString(),
+            count: allNews.length
+        });
+    } catch (error) {
+        console.error('API Error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch news',
+            message: error.message
+        });
+    }
+}
 
